@@ -42,6 +42,7 @@ Options:
 """
 
 import os
+import sys
 from docopt import docopt
 
 try:
@@ -220,11 +221,126 @@ def create_db():
         os.popen2(cmd)
 
 
+def new(migration_type):
+    "Add a new migration (sql or py)"
+    migrations = _find_migrations('migrations/up').union(_find_migrations('migrations/down'))
+    if not migrations:
+        migrations = [0]
+    latest = max(migrations)
+    new = latest + 1
+    if migration_type not in ['sql', 'py']:
+        sys.exit("Migration type {} not supported.".format(migration_type))
+    if migration_type == 'sql':
+        with open('migrations/up/{}.sql'.format(new), 'w') as fu:
+            fu.writelines("""
+-- SQL goes here
+
+INSERT INTO db_version (version) VALUES ('{}');""".format(new))
+        with open('migrations/down/{}.sql'.format(new), 'w') as fd:
+            fd.writelines("""
+-- SQL goes here
+
+DELETE FROM db_version WHERE version = '{}';""".format(new))
+    elif migration_type == 'py':
+        with open('migrations/up/{}.py'.format(new), 'w') as fu:
+            fu.writelines("""from migrations.env import engine, db_session
+
+##########################
+# Migration code goes here
+##########################
+
+db_session.execute("INSERT INTO db_version (version) VALUES ('{}');")
+
+try:
+db_session.commit()
+except Exception:
+db_session.rollback()
+raise
+""".format(new))
+        with open('migrations/down/{}.py'.format(new), 'w') as fd:
+            fd.writelines("""from migrations.env import engine, db_session
+
+##########################
+# Migration code goes here
+##########################
+
+db_session.execute("DELETE FROM db_version WHERE version = '{}';")
+
+try:
+db_session.commit()
+except Exception:
+db_session.rollback()
+raise
+""".format(new))
+
+    print "Created version {}".format(new)
+
+
+def schema_dump():
+    dbtype = engine.name
+    params = dict(database=engine.url.database,
+                  host=engine.url.host,
+                  password=engine.url.password,
+                  port=engine.url.port,
+                  username=engine.url.username
+                  )
+
+    fname = 'migrations/up/1.sql'
+    if dbtype == 'mysql':
+        os.popen('mysqldump -P {port} -h {host} -u {username} -p{password} {database} --no-data=true --add-drop-table=false > migrations/up/1.sql'.format(**params))
+        with open(fname, 'a') as fd:
+            fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
+        print "Schema saved in {}".format(fname)
+    elif dbtype == 'postgresql':
+        if not params['port']:
+            params['port'] = ''
+        os.popen('pg_dump -U {username} -s {database} > migrations/up/1.sql'.format(**params))
+        with open(fname, 'w') as fd:
+            fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
+        print "Schema saved in {}".format(fname)
+    else:
+        sys.exit("Dump of {} not yet supported.".format(dbtype))
+
+
+def create_migrations_env():
+    if os.path.exists('migrations'):
+        print YELLOWC + "./migrations directory already exists. Please remove to recreate." + ENDC
+    else:
+        os.mkdir('migrations')
+        print GREENC + "Created ./migrations" + ENDC
+        os.mkdir('migrations/up')
+        print GREENC + "Created ./migrations/up" + ENDC
+        os.mkdir('migrations/down')
+        print GREENC + "Created ./migrations/down" + ENDC
+        with open('migrations/migrations_env.py', 'w') as fd:
+            fd.write("from database import engine, db_session")
+        print GREENC + "Created ./migrations/migrations_env.py" + ENDC
+        with open('migrations/__init__.py', 'w') as fd:
+            fd.write("")
+        print GREENC + "Created ./migrations/__init__.py" + ENDC
+        print "Done!"
+
+
+def load(migration_file):
+    dbtype = engine.name
+    params = dict(database=engine.url.database,
+                  host=engine.url.host,
+                  password=engine.url.password,
+                  port=engine.url.port,
+                  username=engine.url.username,
+                  fname=migration_file
+                  )
+
+    if dbtype == 'postgresql':
+        os.popen('psql -U {username} -s {database} < {fname}'.format(**params))
+    else:
+        print "Unsupported db type"
+    print "Loaded migration {}".format(migration_file)
+
+
 def main():
     args = docopt(__doc__, version='0.1')
-
     verbose = args['--verbose']
-
     if args['down']:
         down(int(args['VERSION']), verbose)
     elif args['up']:
@@ -234,78 +350,12 @@ def main():
     elif args['create_db']:
         create_db()
     elif args['new']:
-        migrations = _find_migrations('migrations/up').union(_find_migrations('migrations/down'))
-        if not migrations:
-            migrations = [0]
-        latest = max(migrations)
-        new = latest + 1
-        migration_type = args['MIGRATION_TYPE']
-        if migration_type not in ['sql', 'py']:
-            sys.exit("Migration type {} not supported.".format(migration_type))
-        if migration_type == 'sql':
-            with open('migrations/up/{}.sql'.format(new), 'w') as fu:
-                fu.writelines("""
--- SQL goes here
-
-INSERT INTO db_version (version) VALUES ('{}');""".format(new))
-            with open('migrations/down/{}.sql'.format(new), 'w') as fd:
-                fd.writelines("""
--- SQL goes here
-
-DELETE FROM db_version WHERE version = '{}';""".format(new))
-        elif migration_type == 'py':
-            with open('migrations/up/{}.py'.format(new), 'w') as fu:
-                fu.writelines("""from migrations.env import engine, db_session
-
-##########################
-# Migration code goes here
-##########################
-
-db_session.execute("INSERT INTO db_version (version) VALUES ('{}');")
-
-try:
-    db_session.commit()
-except Exception:
-    db_session.rollback()
-    raise
-""".format(new))
-            with open('migrations/down/{}.py'.format(new), 'w') as fd:
-                fd.writelines("""from migrations.env import engine, db_session
-
-##########################
-# Migration code goes here
-##########################
-
-db_session.execute("DELETE FROM db_version WHERE version = '{}';")
-
-try:
-    db_session.commit()
-except Exception:
-    db_session.rollback()
-    raise
-""".format(new))
-
-        print "Created version {}".format(new)
+        new(args['MIGRATION_TYPE'])
     elif args['remove']:
         remove(int(args['VERSION']))
     elif args['load']:
-        dbtype = engine.name
-        migration_file = args['FILE']
-        params = dict(database=engine.url.database,
-                      host=engine.url.host,
-                      password=engine.url.password,
-                      port=engine.url.port,
-                      username=engine.url.username,
-                      fname=migration_file
-                      )
-
-        if dbtype == 'postgresql':
-            os.popen('psql -U {username} -s {database} < {fname}'.format(**params))
-        else:
-            print "Unsupported db type"
-        print "Loaded migration {}".format(migration_file)
+        load(args['FILE'])
     elif args['stamp']:
-        import ipdb; ipdb.set_trace()
         version = args['VERSION']
         if version:
             version = int(version)
@@ -317,49 +367,9 @@ except Exception:
     elif args['version']:
         sys.exit(str(_get_current_db_version()))
     elif args['migrations_env']:
-        if os.path.exists('migrations'):
-            print YELLOWC + "./migrations directory already exists. Please remove to recreate." + ENDC
-        else:
-            os.mkdir('migrations')
-            print GREENC + "Created ./migrations" + ENDC
-            os.mkdir('migrations/up')
-            print GREENC + "Created ./migrations/up" + ENDC
-            os.mkdir('migrations/down')
-            print GREENC + "Created ./migrations/down" + ENDC
-            with open('migrations/migrations_env.py', 'w') as fd:
-                fd.write("from database import engine, db_session")
-            print GREENC + "Created ./migrations/migrations_env.py" + ENDC
-            with open('migrations/__init__.py', 'w') as fd:
-                fd.write("")
-            print GREENC + "Created ./migrations/__init__.py" + ENDC
-            print "Done!"
+        create_migrations_env()
     elif args['schema_dump']:
-        dbtype = engine.name
-        params = dict(database=engine.url.database,
-                      host=engine.url.host,
-                      password=engine.url.password,
-                      port=engine.url.port,
-                      username=engine.url.username
-                      )
-
-        fname = 'migrations/up/1.sql'
-        if dbtype == 'mysql':
-            os.popen('mysqldump -P {port} -h {host} -u {username} -p{password} {database} --no-data=true --add-drop-table=false > migrations/up/1.sql'.format(**params))
-            with open(fname, 'a') as fd:
-                fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
-            print "Schema saved in {}".format(fname)
-        elif dbtype == 'postgresql':
-            if not params['port']:
-                params['port'] = ''
-            os.popen('pg_dump -U {username} -s {database} > migrations/up/1.sql'.format(**params))
-            with open(fname, 'w') as fd:
-                fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
-            print "Schema saved in {}".format(fname)
-        else:
-            sys.exit("Dump of {} not yet supported.".format(dbtype))
-    else:
-        sys.exit(help_text)
-
+        schema_dump()
 
 if __name__ == '__main__':
     main()
