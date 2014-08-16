@@ -12,6 +12,7 @@ setup(
     author_email="dnordberg@gmail.com",
     description=("Very simple manual sql or python migrations for SQLAlchemy."),
     license="BSD",
+    install_requires=["docopt"],
     keywords="python sqlalchemy migrate migration",
     url="http://github.com/dnordberg/sqlalchemy-sql-migrate",
     packages=['sqlalchemysqlmigrate',],
