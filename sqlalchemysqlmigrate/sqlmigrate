@@ -1,0 +1,356 @@
+#!/usr/bin/python
+"""Very simple manual sql migrations for SQLAlchemy.
+"""
+
+import os
+import sys
+
+try:
+    from migrations.migrations_env import engine, db_session
+except:
+    pass
+
+
+# Console colors
+BLUEC = '\033[94m'
+GREENC = '\033[92m'
+YELLOWC = '\033[93m'
+REDC = '\033[91m'
+ENDC = '\033[0m'
+
+
+# Ensure migrations only run once
+has_run = False
+
+
+class MigrationError(Exception):
+    """Raise MigrationError if we fail to migrate."""
+    pass
+
+
+def _find_migrations(path):
+    """Gets a list of manual migrations."""
+    return set([int(f.split('.')[0])
+                for f in os.listdir(path)
+                if not f.startswith('__init__') and f.split('.')[1] in ['py', 'sql']])
+
+
+def _get_current_db_version():
+    """Gets the current schema version."""
+    try:
+        return int(db_session.execute("select max(version) from db_version").scalar())
+    except Exception:
+        db_session.rollback()
+        print "db_version table does not exist, will apply all migrations..."
+        return None
+
+
+def _apply_migration(migration_dir, migration, verbose=False):
+    """Applies a migration."""
+    fname = "{}/{}.sql".format(migration_dir, migration)
+    if os.path.exists(fname):
+        sql = open(fname, 'r').read()
+        # Need to escape schema dump properly
+        sql = sql.replace("%", "%%").decode('utf-8')
+        if verbose:
+            print sql.replace('\r', '\r\n')
+        db_session.execute(sql)
+        try:
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            raise
+    else:
+        fname = "{}/{}.py".format(migration_dir, migration)
+        modpath = fname.split('/')[-1]
+        mod = fname.replace('/', '.').strip('.py')
+        if verbose:
+            mod_text = open(fname, 'r').read()
+            print mod_text.replace('\r', '\r\n')
+        __import__('{}.{}'.format(modpath, mod), {}, {})
+    print BLUEC + "-- Applied migration " + GREENC + fname + ENDC
+
+
+def _remove_stale_migrations(migrations, db_version):
+    """Removes migrations from the database which don't exist on the
+    filesystem."""
+    # E.g. 5 migrations, while db version is 10
+    # Remove db entries for migrations 6 - 10
+    if db_version:
+        for v in range(max(migrations) + 1, db_version + 1):
+            remove(v)
+
+
+def stamp(version):
+    """Stamp a migration as already having taken place."""
+    db_session.execute("INSERT INTO db_version (version) VALUES ('{}');".format(version))
+    db_session.commit()
+
+
+def remove(version):
+    """Removes a entry from the db_version table so that the migration can be
+    reapplied (Provided it is in a highest current version)
+    """
+    db_session.execute("DELETE FROM db_version WHERE version = '{}';".format(version))
+    db_session.commit()
+
+
+def up(version=None, verbose=False):
+    """Applies all migrations that have not currently
+    been applied.
+
+    Returns version to which user migrated.
+
+    """
+    global has_run
+    if not has_run:
+        has_run = True
+        migration_dir = 'up'
+        migrations = _find_migrations(migration_dir)
+        if version is None:
+            version = max(migrations)
+            print "No version was specified, will upgrade to the latest schema version."
+            print "--------------------------------------------------------------------"
+        elif version not in migrations:
+            raise MigrationError("Failed to migrate. Version {} does not exist.".format(version))
+
+        db_version = _get_current_db_version()
+        _remove_stale_migrations(migrations, db_version)
+        migrations_to_apply = sorted([i for i in migrations if i > db_version and i <= version])
+
+        for migration in migrations_to_apply:
+            _apply_migration(migration_dir, migration, verbose)
+
+
+def down(version, verbose=False):
+    """Downgrades the database to the version specified.
+
+    Returns version to which user migrated.
+
+    """
+    global has_run
+    if not has_run:
+        has_run = True
+        migration_dir = 'down'
+        migrations = _find_migrations(migration_dir)
+        db_version = _get_current_db_version()
+        _remove_stale_migrations(migrations, db_version)
+        migrations_to_apply = sorted([i for i in migrations
+                                     if i <= db_version and i > version])
+        migrations_to_apply.reverse()
+
+        for migration in migrations_to_apply:
+            _apply_migration(migration_dir, migration, verbose)
+
+
+def drop_db():
+    if engine.name == 'mysql':
+        print YELLOWC + "Dropping database..." + ENDC
+        cmd = 'mysql -P {port} -h {host} -u {username} -p{password} -e "{sql}"'
+        sql = 'drop database {};'.format(engine.url.database)
+        os.popen2(cmd.format(sql=sql,
+                             port=engine.url.port,
+                             host=engine.url.host,
+                             username=engine.url.username,
+                             password=engine.url.password,
+                             ))
+    elif engine.name == 'postgresql':
+        print YELLOWC + "Dropping database..." + ENDC
+        cmd = "pkill -f 'postgres: postgres {}'".format(engine.url.database)
+        os.popen2(cmd)
+        cmd = 'dropdb {}'.format(engine.url.database)
+        os.popen2(cmd)
+
+
+def create_db():
+    if engine.name == 'mysql':
+        print YELLOWC + "Creating database..." + ENDC
+        cmd = 'mysql -P {port} -h {host} -u {username} -p{password} -e "{sql}"'
+        sql = 'create database {} character set utf8 collate utf8_general_ci;'.\
+            format(engine.url.database)
+        os.popen2(cmd.format(sql=sql,
+                             port=engine.url.port,
+                             host=engine.url.host,
+                             username=engine.url.username,
+                             password=engine.url.password,
+                             ))
+    elif engine.name == 'postgresql':
+        print YELLOWC + "Creating database..." + ENDC
+        cmd = 'createdb -h localhost -O {} {}'.format(engine.url.username,
+                                                      engine.url.database)
+        os.popen2(cmd)
+
+
+def main():
+    help_text = ("Migrate database using manual SQL supplied in migrations/up and migrations/down.\n\n"
+                 "Create migrations env: " + GREENC + "sqlmigrate migrations_env\n" + ENDC +
+                 "Schema dump for first migration: " + GREENC + "sqlmigrate schema_dump\n" + ENDC +
+                 "Current migration version: " + GREENC + "sqlmigrate version\n" + ENDC +
+                 "New migration: " + GREENC + "sqlmigrate new {sql:default|py}\n" + ENDC +
+                 "Migrate up: " + GREENC + "sqlmigrate up <version> (optional: --verbose or -v)\n" + ENDC +
+                 "Migrate down: " + GREENC + "sqlmigrate down <version> (optional: --verbose or -v)\n" + ENDC +
+                 "\n"
+                 "\n"
+                 "Create db: " + GREENC + "sqlmigrate create_db\n" + ENDC +
+                 "Drop db: " + GREENC + "sqlmigrate drop_db\n" + ENDC +
+                 "Load backup: " + GREENC + "sqlmigrate load\n" + ENDC
+                 )
+
+    if len(sys.argv) < 2:
+        sys.exit(help_text)
+
+    cmd = sys.argv[1]
+
+    verbose = False
+
+    if cmd == 'down':
+        if len(sys.argv) < 3:
+            sys.exit("Need to specify a version to downgrade to.")
+        if len(sys.argv) == 4:
+            verbose = sys.argv[3] in ['--verbose', '-v']
+        version = int(sys.argv[2])
+        down(version, verbose)
+    elif cmd == 'up':
+        version = None
+        if len(sys.argv) == 3:
+            verbose = sys.argv[2] in ['--verbose', '-v']
+            if not verbose:
+                version = int(sys.argv[2])
+        if len(sys.argv) == 4:
+            verbose = sys.argv[3] in ['--verbose', '-v']
+        up(version, verbose)
+    elif cmd == 'drop_db':
+        drop_db()
+    elif cmd == 'create_db':
+        create_db()
+    elif cmd == 'new':
+        migrations = _find_migrations('migrations/up').union(_find_migrations('migrations/down'))
+        if not migrations:
+            migrations = [0]
+        latest = max(migrations)
+        new = latest + 1
+        migration_type = 'sql'
+        if len(sys.argv) == 3:
+            migration_type = sys.argv[2]
+        if migration_type not in ['sql', 'py']:
+            sys.exit("Migration type {} not supported.".format(migration_type))
+        if migration_type == 'sql':
+            with open('migrations/up/{}.sql'.format(new), 'w') as fu:
+                fu.writelines("""
+-- SQL goes here
+
+INSERT INTO db_version (version) VALUES ('{}');""".format(new))
+            with open('migrations/down/{}.sql'.format(new), 'w') as fd:
+                fd.writelines("""
+-- SQL goes here
+
+DELETE FROM db_version WHERE version = '{}';""".format(new))
+        elif migration_type == 'py':
+            with open('migrations/up/{}.py'.format(new), 'w') as fu:
+                fu.writelines("""from migrations.env import engine, db_session
+
+##########################
+# Migration code goes here
+##########################
+
+db_session.execute("INSERT INTO db_version (version) VALUES ('{}');")
+
+try:
+    db_session.commit()
+except Exception:
+    db_session.rollback()
+    raise
+""".format(new))
+            with open('migrations/down/{}.py'.format(new), 'w') as fd:
+                fd.writelines("""from migrations.env import engine, db_session
+
+##########################
+# Migration code goes here
+##########################
+
+db_session.execute("DELETE FROM db_version WHERE version = '{}';")
+
+try:
+    db_session.commit()
+except Exception:
+    db_session.rollback()
+    raise
+""".format(new))
+
+        print "Created version {}".format(new)
+    elif cmd == 'remove':
+        version = int(sys.argv[2])
+        remove(version)
+    elif cmd == 'load':
+        dbtype = engine.name
+        migration_file = sys.argv[2]
+        params = dict(database=engine.url.database,
+                      host=engine.url.host,
+                      password=engine.url.password,
+                      port=engine.url.port,
+                      username=engine.url.username,
+                      fname=migration_file
+                      )
+
+        if dbtype == 'postgresql':
+            os.popen('psql -U {username} -s {database} < {fname}'.format(**params))
+        else:
+            print "Unsupported db type"
+        print "Loaded migration {}".format(migration_file)
+    elif cmd == 'stamp':
+        if len(sys.argv) == 3:
+            version = int(sys.argv[2])
+        else:
+            migrations = _find_migrations('migrations/up').union(_find_migrations('migrations/down'))
+            version = max(migrations)
+            print "No stamp version provided, stamping up to lastest version: {}".format(version)
+        stamp(version)
+    elif cmd == 'version':
+        sys.exit(str(_get_current_db_version()))
+    elif cmd == 'migrations_env':
+        if os.path.exists('migrations'):
+            print YELLOWC + "./migrations directory already exists. Please remove to recreate." + ENDC
+        else:
+            os.mkdir('migrations')
+            print GREENC + "Created ./migrations" + ENDC
+            os.mkdir('migrations/up')
+            print GREENC + "Created ./migrations/up" + ENDC
+            os.mkdir('migrations/down')
+            print GREENC + "Created ./migrations/down" + ENDC
+            with open('migrations/migrations_env.py', 'w') as fd:
+                fd.write("from database import engine, db_session")
+            print GREENC + "Created ./migrations/migrations_env.py" + ENDC
+            with open('migrations/__init__.py', 'w') as fd:
+                fd.write("")
+            print GREENC + "Created ./migrations/__init__.py" + ENDC
+            print "Done!"
+    elif cmd == 'schema_dump':
+        dbtype = engine.name
+        params = dict(database=engine.url.database,
+                      host=engine.url.host,
+                      password=engine.url.password,
+                      port=engine.url.port,
+                      username=engine.url.username
+                      )
+
+        fname = 'migrations/up/1.sql'
+        if dbtype == 'mysql':
+            os.popen('mysqldump -P {port} -h {host} -u {username} -p{password} {database} --no-data=true --add-drop-table=false > migrations/up/1.sql'.format(**params))
+            with open(fname, 'a') as fd:
+                fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
+            print "Schema saved in {}".format(fname)
+        elif dbtype == 'postgresql':
+            if not params['port']:
+                params['port'] = ''
+            os.popen('pg_dump -U {username} -s {database} > migrations/up/1.sql'.format(**params))
+            with open(fname, 'w') as fd:
+                fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
+            print "Schema saved in {}".format(fname)
+        else:
+            sys.exit("Dump of {} not yet supported.".format(dbtype))
+    else:
+        sys.exit(help_text)
+
+
+if __name__ == '__main__':
+    main()
