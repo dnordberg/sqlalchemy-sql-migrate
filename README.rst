@@ -5,6 +5,8 @@ Very simple manual sql migrations for SQLAlchemy.
 
 The following should be defined in SQLAlchemy
 
+.. code-block::
+
     class DBVersion(Base):
         '''Store db version for manual migrations.
         '''
@@ -47,6 +49,8 @@ Create a file migrations.env.
 
 Set migrations.engine and db_session to a SQLAlchemy engine and session.
 
+.. code-block::
+
     >> import migrations.migrate
     >> migrate.up(version)
     >> migrate.down(version)
@@ -56,6 +60,8 @@ command 'schema_dump' or create a schema dump manually and place it
 in 'up/1.sql'. No corresponding 'down/1.sql' file should exist.
 
 If you want to create the initial schema using SQLAlchemy run
+
+.. code-block::
 
     >> Base = declarative_base()
     >> Base.metadata.create_all(config.db_engine)
