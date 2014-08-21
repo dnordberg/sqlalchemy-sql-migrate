@@ -12,7 +12,7 @@ The following should be defined in SQLAlchemy
         '''
         __tablename__ = 'db_version'
         __table_args__ = table_args
-        version = Column(Integer(2), primary_key=True)
+        version = Column(Integer, primary_key=True)
 
 SQLAlchemy doesn't have many options for database migrations.
 
