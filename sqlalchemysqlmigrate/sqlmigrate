@@ -45,6 +45,9 @@ import os
 import sys
 from docopt import docopt
 
+# Required to import from project root
+sys.path.insert(0, os.path.abspath(os.path.curdir))
+
 try:
     from migrations.migrations_env import engine, db_session
 except:
