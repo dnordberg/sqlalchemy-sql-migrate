@@ -1,6 +1,9 @@
 #!/usr/bin/python
 """Simple manual migrations for SQLAlchemy.
 
+A migration 0 can also exist which is used when running 'create_db'
+but not for other migrations.
+
 Usage:
   sqlmigrate [-v] migrations_env
   sqlmigrate [-v] schema_dump
@@ -8,7 +11,7 @@ Usage:
   sqlmigrate [-v] new [MIGRATION_TYPE]
   sqlmigrate [-v] up [VERSION]
   sqlmigrate [-v] down VERSION
-  sqlmigrate [-v] create_db
+  sqlmigrate [-v] create_db [--initial]
   sqlmigrate [-v] drop_db
   sqlmigrate [-v] load FILE
   sqlmigrate [-v] remove VERSION
@@ -37,7 +40,8 @@ Arguments:
 Options:
   -h --help
   -v --verbose          verbose mode
-  --version             Show version.
+  --version             Show version
+  --initial             Load migration 0
 
 """
 
@@ -148,7 +152,7 @@ def up(version=None, verbose=False):
     global has_run
     if not has_run:
         has_run = True
-        migration_dir = 'up'
+        migration_dir = 'migrations/up'
         migrations = _find_migrations(migration_dir)
         if version is None:
             version = max(migrations)
@@ -159,10 +163,17 @@ def up(version=None, verbose=False):
 
         db_version = _get_current_db_version()
         _remove_stale_migrations(migrations, db_version)
-        migrations_to_apply = sorted([i for i in migrations if i > db_version and i <= version])
 
-        for migration in migrations_to_apply:
-            _apply_migration(migration_dir, migration, verbose)
+        if version == 0:
+            _apply_migration(migration_dir, version, verbose)
+        else:
+            migrations_to_apply = sorted([i for i in migrations
+                                          if i > db_version and i <= version
+                                          and i != 0
+                                          ])
+
+            for migration in migrations_to_apply:
+                _apply_migration(migration_dir, migration, verbose)
 
 
 def down(version, verbose=False):
@@ -174,7 +185,7 @@ def down(version, verbose=False):
     global has_run
     if not has_run:
         has_run = True
-        migration_dir = 'down'
+        migration_dir = 'migrations/down'
         migrations = _find_migrations(migration_dir)
         db_version = _get_current_db_version()
         _remove_stale_migrations(migrations, db_version)
@@ -205,7 +216,7 @@ def drop_db():
         os.popen2(cmd)
 
 
-def create_db():
+def create_db(initial=False):
     if engine.name == 'mysql':
         print YELLOWC + "Creating database..." + ENDC
         cmd = 'mysql -P {port} -h {host} -u {username} -p{password} -e "{sql}"'
@@ -222,6 +233,8 @@ def create_db():
         cmd = 'createdb -h localhost -O {} {}'.format(engine.url.username,
                                                       engine.url.database)
         os.popen2(cmd)
+    if initial:
+        up(0)
 
 
 def new(migration_type):
@@ -347,11 +360,14 @@ def main():
     if args['down']:
         down(int(args['VERSION']), verbose)
     elif args['up']:
-        up(int(args['VERSION']), verbose)
+        version = args['VERSION']
+        if args['VERSION']:
+            version = int(version)
+        up(version, verbose)
     elif args['drop_db']:
         drop_db()
     elif args['create_db']:
-        create_db()
+        create_db(args['--initial'])
     elif args['new']:
         new(args['MIGRATION_TYPE'])
     elif args['remove']:
