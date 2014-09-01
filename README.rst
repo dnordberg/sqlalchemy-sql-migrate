@@ -65,3 +65,46 @@ If you want to create the initial schema using SQLAlchemy run
 
     >> Base = declarative_base()
     >> Base.metadata.create_all(config.db_engine)
+
+Usage:
+------
+
+.. code-block::
+
+    sqlmigrate [-v] migrations_env
+    sqlmigrate [-v] schema_dump
+    sqlmigrate [-v] version
+    sqlmigrate [-v] new [MIGRATION_TYPE]
+    sqlmigrate [-v] up [VERSION]
+    sqlmigrate [-v] down VERSION
+    sqlmigrate [-v] create_db [--initial]
+    sqlmigrate [-v] drop_db
+    sqlmigrate [-v] load FILE
+    sqlmigrate [-v] remove VERSION
+    sqlmigrate [-v] stamp [VERSION]
+    sqlmigrate --version
+
+    Arguments:
+        migrations_env        Create directory structure holding migrations
+        schema_dump           Create first migration by dumping database
+        new                   Add a new migration (Default MIGRATION TYPE=sql)
+        MIGRATION_TYPE        Migration type, 'sql' or 'py'
+        up                    Migrate up (If no VERSION is specified, migrate to
+                                latest)
+        down                  Migrate down
+        VERSION               Version to migrate to
+        create_db             Recreate the database
+        drop_db               Drop database
+        load                  Load database from file
+        FILE                  Database file to load
+        remove                Removes a entry from the db_version table so that the
+                                migration can be reapplied (Provided it is in a highest
+                                current version)
+        stamp                 Stamp a migration as already having taken place
+                                (If no VERSION is specified, stamp to latest)
+
+        Options:
+        -h --help
+        -v --verbose          verbose mode
+        --version             Show version
+        --initial             Load migration 0
