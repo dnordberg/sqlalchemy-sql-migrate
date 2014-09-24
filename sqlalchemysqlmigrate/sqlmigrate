@@ -210,9 +210,12 @@ def drop_db():
                              ))
     elif engine.name == 'postgresql':
         print YELLOWC + "Dropping database..." + ENDC
+        with open('~/.pgpass', 'w') as pgpass:
+            pgpass.write(engine.url.password)
         cmd = "pkill -f 'postgres: postgres {}'".format(engine.url.database)
         os.popen2(cmd)
-        cmd = 'dropdb {}'.format(engine.url.database)
+        cmd = 'dropdb -w -U {} {}'.format(engine.url.username,
+                                          engine.url.database)
         os.popen2(cmd)
 
 
