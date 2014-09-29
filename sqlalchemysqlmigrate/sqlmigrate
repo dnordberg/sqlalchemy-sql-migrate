@@ -1,6 +1,9 @@
 #!/usr/bin/python
 """Simple manual migrations for SQLAlchemy.
 
+A migration 0 can also exist which is used when running 'create_db'
+but not for other migrations.
+
 Usage:
   sqlmigrate [-v] migrations_env
   sqlmigrate [-v] schema_dump
@@ -166,6 +169,7 @@ def up(version=None, verbose=False):
         else:
             migrations_to_apply = sorted([i for i in migrations
                                           if i > db_version and i <= version
+                                          and i != 0
                                           ])
 
             for migration in migrations_to_apply:
