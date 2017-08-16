@@ -75,6 +75,14 @@ class MigrationError(Exception):
     pass
 
 
+def _get_engine_params(engine)
+    return dict(
+        port=engine.url.port,
+        host=engine.url.host,
+        username=engine.url.username,
+        password=engine.url.password,
+    )
+
 def _find_migrations(path):
     """Gets a list of manual migrations."""
     return set([int(f.split('.')[0])
@@ -198,45 +206,39 @@ def down(version, verbose=False):
 
 
 def drop_db():
+    params = _get_engine_params(engine.url)
     if engine.name == 'mysql':
         print YELLOWC + "Dropping database..." + ENDC
         cmd = 'mysql -P {port} -h {host} -u {username} -p{password} -e "{sql}"'
-        sql = 'drop database {};'.format(engine.url.database)
-        os.popen2(cmd.format(sql=sql,
-                             port=engine.url.port,
-                             host=engine.url.host,
-                             username=engine.url.username,
-                             password=engine.url.password,
-                             ))
+        params['sql'] = 'drop database {};'.format(engine.url.database)
+        os.popen2(cmd.format(**params))
     elif engine.name == 'postgresql':
         print YELLOWC + "Dropping database..." + ENDC
-        params = dict(engine.url)
-        params.update({'sql': '''
+        sql = '''
 SELECT pg_terminate_backend(pg_stat_activity.pid)
 FROM pg_stat_activity
 WHERE datname = current_database()
-AND pid <> pg_backend_pid();'''})
-        cmd = "PGPASSWORD={password} psql -U {username} -h {host} {database} -c {sql}".format(params)
+AND pid <> pg_backend_pid();
+        '''
+        params['sql'] = 'drop database {};'.format(engine.url.database)
+        cmd = "PGPASSWORD={password} psql -U {username} -h {host} {database} -c {sql}".format(**params)
         os.popen2(cmd)
-        cmd = 'PGPASSWORD={password} dropdb -h {host} -U {username} {database}'.format(params)
+        cmd = 'PGPASSWORD={password} dropdb -h {host} -U {username} {database}'.format(**params)
         os.popen2(cmd)
 
 
 def create_db(initial=False):
+    params = _get_engine_params(engine.url)
     if engine.name == 'mysql':
         print YELLOWC + "Creating database..." + ENDC
         cmd = 'mysql -P {port} -h {host} -u {username} -p{password} -e "{sql}"'
-        sql = 'create database {} character set utf8 collate utf8_general_ci;'.\
-            format(engine.url.database)
-        os.popen2(cmd.format(sql=sql,
-                             port=engine.url.port,
-                             host=engine.url.host,
-                             username=engine.url.username,
-                             password=engine.url.password,
-                             ))
+        sql = 'create database {database} character set utf8 collate utf8_general_ci;'.\
+            format(**params)
+        params['sql'] = sql
+        os.popen2(cmd.format(**params))
     elif engine.name == 'postgresql':
         print YELLOWC + "Creating database..." + ENDC
-        cmd = 'PGPASSWORD={password} createdb -h {host} -p {port} -U {username} -O {username} {database}'.format(**engine.url)
+        cmd = 'PGPASSWORD={password} createdb -h {host} -p {port} -U {username} -O {username} {database}'.format(**params)
         os.popen2(cmd)
     if initial:
         up(0)
@@ -300,13 +302,14 @@ except Exception:
 def schema_dump():
     dbtype = engine.name
     fname = 'migrations/up/1.sql'
+    params = _get_engine_params(engine.url)
     if dbtype == 'mysql':
-        os.popen('mysqldump -P {port} -h {host} -u {username} -p{password} {database} --no-data=true --add-drop-table=false > migrations/up/1.sql'.format(**engine.url))
+        os.popen('mysqldump -P {port} -h {host} -u {username} -p{password} {database} --no-data=true --add-drop-table=false > migrations/up/1.sql'.format(**params))
         with open(fname, 'a') as fd:
             fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
         print "Schema saved in {}".format(fname)
     elif dbtype == 'postgresql':
-        os.popen('PGPASSWORD={password} pg_dump -h {host} -U {username} -s {database} > migrations/up/1.sql'.format(**engine.url))
+        os.popen('PGPASSWORD={password} pg_dump -h {host} -U {username} -s {database} > migrations/up/1.sql'.format(**params))
         with open(fname, 'a') as fd:
             fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
         print "Schema saved in {}".format(fname)
@@ -335,8 +338,8 @@ def create_migrations_env():
 
 def load(migration_file):
     dbtype = engine.name
-    params = dict(engine.url)
-    params.update({'fname': migration_file})
+    params = _get_engine_params(engine.url)
+    params['fname']= migration_file
     if dbtype == 'postgresql':
         os.popen('PGPASSWORD={password} psql -U {username} -s {database} < {fname}'.format(**params))
     else:
