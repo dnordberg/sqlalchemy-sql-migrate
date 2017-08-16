@@ -75,7 +75,7 @@ class MigrationError(Exception):
     pass
 
 
-def _get_engine_params(engine)
+def _get_engine_params(engine):
     return dict(
         port=engine.url.port,
         host=engine.url.host,
