@@ -239,8 +239,8 @@ def create_db(initial=False):
         print YELLOWC + "Creating database..." + ENDC
         cmd = 'PGPASSWORD={password} createdb -h {host} -p {port} -U {username} -O {username} {database}'.format(**params)
         os.popen2(cmd)
-    time.sleep(2)
     if initial:
+        time.sleep(2)
         up(0)
 
 
