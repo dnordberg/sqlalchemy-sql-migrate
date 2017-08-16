@@ -206,7 +206,7 @@ def down(version, verbose=False):
 
 
 def drop_db():
-    params = _get_engine_params(engine.url)
+    params = _get_engine_params(engine)
     if engine.name == 'mysql':
         print YELLOWC + "Dropping database..." + ENDC
         cmd = 'mysql -P {port} -h {host} -u {username} -p{password} -e "{sql}"'
@@ -228,7 +228,7 @@ AND pid <> pg_backend_pid();
 
 
 def create_db(initial=False):
-    params = _get_engine_params(engine.url)
+    params = _get_engine_params(engine)
     if engine.name == 'mysql':
         print YELLOWC + "Creating database..." + ENDC
         cmd = 'mysql -P {port} -h {host} -u {username} -p{password} -e "{sql}"'
@@ -302,7 +302,7 @@ except Exception:
 def schema_dump():
     dbtype = engine.name
     fname = 'migrations/up/1.sql'
-    params = _get_engine_params(engine.url)
+    params = _get_engine_params(engine)
     if dbtype == 'mysql':
         os.popen('mysqldump -P {port} -h {host} -u {username} -p{password} {database} --no-data=true --add-drop-table=false > migrations/up/1.sql'.format(**params))
         with open(fname, 'a') as fd:
@@ -338,7 +338,7 @@ def create_migrations_env():
 
 def load(migration_file):
     dbtype = engine.name
-    params = _get_engine_params(engine.url)
+    params = _get_engine_params(engine)
     params['fname']= migration_file
     if dbtype == 'postgresql':
         os.popen('PGPASSWORD={password} psql -U {username} -s {database} < {fname}'.format(**params))
