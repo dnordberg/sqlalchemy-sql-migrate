@@ -210,7 +210,7 @@ def drop_db():
                              ))
     elif engine.name == 'postgresql':
         print YELLOWC + "Dropping database..." + ENDC
-        params = engine.url
+        params = dict(engine.url)
         params.update({'sql': '''
 SELECT pg_terminate_backend(pg_stat_activity.pid)
 FROM pg_stat_activity
@@ -335,7 +335,7 @@ def create_migrations_env():
 
 def load(migration_file):
     dbtype = engine.name
-    params = engine.url
+    params = dict(engine.url)
     params.update({'fname': migration_file})
     if dbtype == 'postgresql':
         os.popen('PGPASSWORD={password} psql -U {username} -s {database} < {fname}'.format(**params))
