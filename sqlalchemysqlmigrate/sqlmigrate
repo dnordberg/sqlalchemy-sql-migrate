@@ -81,6 +81,7 @@ def _get_engine_params(engine):
         host=engine.url.host,
         username=engine.url.username,
         password=engine.url.password,
+        database=engine.url.database,
     )
 
 def _find_migrations(path):
