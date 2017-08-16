@@ -314,7 +314,7 @@ def schema_dump():
     elif dbtype == 'postgresql':
         if not params['port']:
             params['port'] = ''
-        os.popen('pg_dump -U {username} -s {database} > migrations/up/1.sql'.format(**params))
+        os.popen('PGPASSWORD={password} pg_dump -h {host} -U {username} -s {database} > migrations/up/1.sql'.format(**params))
         with open(fname, 'a') as fd:
             fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
         print "Schema saved in {}".format(fname)
