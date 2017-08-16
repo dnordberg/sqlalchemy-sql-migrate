@@ -210,13 +210,15 @@ def drop_db():
                              ))
     elif engine.name == 'postgresql':
         print YELLOWC + "Dropping database..." + ENDC
-        if engine.url.password:
-            with open('.pgpass', 'w') as pgpass:
-                pgpass.write(engine.url.password)
-        cmd = "pkill -f 'postgres: postgres {}'".format(engine.url.database)
+        params = engine.url
+        params.update({'sql': '''
+SELECT pg_terminate_backend(pg_stat_activity.pid)
+FROM pg_stat_activity
+WHERE datname = current_database()
+AND pid <> pg_backend_pid();'''})
+        cmd = "PGPASSWORD={password} psql -U {username} -h {host} {database} -c {sql}".format(params)
         os.popen2(cmd)
-        cmd = 'dropdb -w -U {} {}'.format(engine.url.username,
-                                          engine.url.database)
+        cmd = 'PGPASSWORD={password} dropdb -h {host} -U {username} {database}'.format(params)
         os.popen2(cmd)
 
 
@@ -234,8 +236,7 @@ def create_db(initial=False):
                              ))
     elif engine.name == 'postgresql':
         print YELLOWC + "Creating database..." + ENDC
-        cmd = 'createdb -h localhost -O {} {}'.format(engine.url.username,
-                                                      engine.url.database)
+        cmd = 'PGPASSWORD={password} createdb -h {host} -p {port} -U {username} -O {username} {database}'.format(**engine.url)
         os.popen2(cmd)
     if initial:
         up(0)
@@ -272,10 +273,10 @@ DELETE FROM db_version WHERE version = '{}';""".format(new))
 db_session.execute("INSERT INTO db_version (version) VALUES ('{}');")
 
 try:
-db_session.commit()
+  db_session.commit()
 except Exception:
-db_session.rollback()
-raise
+  db_session.rollback()
+  raise
 """.format(new))
         with open('migrations/down/{}.py'.format(new), 'w') as fd:
             fd.writelines("""from migrations.env import engine, db_session
@@ -287,10 +288,10 @@ raise
 db_session.execute("DELETE FROM db_version WHERE version = '{}';")
 
 try:
-db_session.commit()
+  db_session.commit()
 except Exception:
-db_session.rollback()
-raise
+  db_session.rollback()
+  raise
 """.format(new))
 
     print "Created version {}".format(new)
@@ -298,23 +299,14 @@ raise
 
 def schema_dump():
     dbtype = engine.name
-    params = dict(database=engine.url.database,
-                  host=engine.url.host,
-                  password=engine.url.password,
-                  port=engine.url.port,
-                  username=engine.url.username
-                  )
-
     fname = 'migrations/up/1.sql'
     if dbtype == 'mysql':
-        os.popen('mysqldump -P {port} -h {host} -u {username} -p{password} {database} --no-data=true --add-drop-table=false > migrations/up/1.sql'.format(**params))
+        os.popen('mysqldump -P {port} -h {host} -u {username} -p{password} {database} --no-data=true --add-drop-table=false > migrations/up/1.sql'.format(**engine.url))
         with open(fname, 'a') as fd:
             fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
         print "Schema saved in {}".format(fname)
     elif dbtype == 'postgresql':
-        if not params['port']:
-            params['port'] = ''
-        os.popen('PGPASSWORD={password} pg_dump -h {host} -U {username} -s {database} > migrations/up/1.sql'.format(**params))
+        os.popen('PGPASSWORD={password} pg_dump -h {host} -U {username} -s {database} > migrations/up/1.sql'.format(**engine.url))
         with open(fname, 'a') as fd:
             fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
         print "Schema saved in {}".format(fname)
@@ -343,16 +335,10 @@ def create_migrations_env():
 
 def load(migration_file):
     dbtype = engine.name
-    params = dict(database=engine.url.database,
-                  host=engine.url.host,
-                  password=engine.url.password,
-                  port=engine.url.port,
-                  username=engine.url.username,
-                  fname=migration_file
-                  )
-
+    params = engine.url
+    params.update({'fname': migration_file})
     if dbtype == 'postgresql':
-        os.popen('psql -U {username} -s {database} < {fname}'.format(**params))
+        os.popen('PGPASSWORD={password} psql -U {username} -s {database} < {fname}'.format(**params))
     else:
         print "Unsupported db type"
     print "Loaded migration {}".format(migration_file)
