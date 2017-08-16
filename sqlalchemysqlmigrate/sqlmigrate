@@ -46,6 +46,7 @@ Options:
 """
 
 import os
+import time
 import sys
 from docopt import docopt
 
@@ -215,15 +216,12 @@ def drop_db():
         os.popen2(cmd.format(**params))
     elif engine.name == 'postgresql':
         print YELLOWC + "Dropping database..." + ENDC
-        sql = '''
-SELECT pg_terminate_backend(pg_stat_activity.pid)
-FROM pg_stat_activity
-WHERE datname = current_database()
-AND pid <> pg_backend_pid();
-        '''
-        params['sql'] = 'drop database {};'.format(engine.url.database)
-        cmd = "PGPASSWORD={password} psql -U {username} -h {host} {database} -c {sql}".format(**params)
+
+        params['sql'] = '''SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();'''
+        cmd = "PGPASSWORD={password} psql -U {username} -h {host} {database} -c '{sql}'".format(**params)
         os.popen2(cmd)
+
+        params['sql'] = 'drop database {database};'.format(**params)
         cmd = 'PGPASSWORD={password} dropdb -h {host} -U {username} {database}'.format(**params)
         os.popen2(cmd)
 
@@ -241,6 +239,7 @@ def create_db(initial=False):
         print YELLOWC + "Creating database..." + ENDC
         cmd = 'PGPASSWORD={password} createdb -h {host} -p {port} -U {username} -O {username} {database}'.format(**params)
         os.popen2(cmd)
+    time.sleep(2)
     if initial:
         up(0)
 
@@ -386,3 +385,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
