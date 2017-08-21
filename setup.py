@@ -7,7 +7,7 @@ def read(fname):
 
 setup(
     name="sqlalchemy-sql-migrate",
-    version="0.1",
+    version="0.2",
     author="Daniel Nordberg",
     author_email="dnordberg@gmail.com",
     description=("Very simple manual sql or python migrations for SQLAlchemy."),
