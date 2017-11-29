@@ -46,7 +46,6 @@ Options:
 """
 
 import os
-import time
 import sys
 from docopt import docopt
 
@@ -76,15 +75,6 @@ class MigrationError(Exception):
     pass
 
 
-def _get_engine_params(engine):
-    return dict(
-        port=engine.url.port,
-        host=engine.url.host,
-        username=engine.url.username,
-        password=engine.url.password,
-        database=engine.url.database,
-    )
-
 def _find_migrations(path):
     """Gets a list of manual migrations."""
     return set([int(f.split('.')[0])
@@ -98,7 +88,7 @@ def _get_current_db_version():
         return int(db_session.execute("select max(version) from db_version").scalar())
     except Exception:
         db_session.rollback()
-        print "db_version table does not exist, will apply all migrations..."
+        print("db_version table does not exist, will apply all migrations..."))
         return None
 
 
@@ -110,7 +100,7 @@ def _apply_migration(migration_dir, migration, verbose=False):
         # Need to escape schema dump properly
         sql = sql.replace("%", "%%").decode('utf-8')
         if verbose:
-            print sql.replace('\r', '\r\n')
+            print(sql.replace('\r', '\r\n')))
         db_session.execute(sql)
         try:
             db_session.commit()
@@ -123,9 +113,9 @@ def _apply_migration(migration_dir, migration, verbose=False):
         mod = fname.replace('/', '.').strip('.py')
         if verbose:
             mod_text = open(fname, 'r').read()
-            print mod_text.replace('\r', '\r\n')
+            print(mod_text.replace('\r', '\r\n')))
         __import__('{}.{}'.format(modpath, mod), {}, {})
-    print BLUEC + "-- Applied migration " + GREENC + fname + ENDC
+    print(BLUEC + "-- Applied migration " + GREENC + fname + ENDC))
 
 
 def _remove_stale_migrations(migrations, db_version):
@@ -166,8 +156,8 @@ def up(version=None, verbose=False):
         migrations = _find_migrations(migration_dir)
         if version is None:
             version = max(migrations)
-            print "No version was specified, will upgrade to the latest schema version."
-            print "--------------------------------------------------------------------"
+            print("No version was specified, will upgrade to the latest schema version.")
+            print("--------------------------------------------------------------------")
         elif version not in migrations:
             raise MigrationError("Failed to migrate. Version {} does not exist.".format(version))
 
@@ -208,39 +198,46 @@ def down(version, verbose=False):
 
 
 def drop_db():
-    params = _get_engine_params(engine)
     if engine.name == 'mysql':
-        print YELLOWC + "Dropping database..." + ENDC
+        print(YELLOWC + "Dropping database..." + ENDC)
         cmd = 'mysql -P {port} -h {host} -u {username} -p{password} -e "{sql}"'
-        params['sql'] = 'drop database {};'.format(engine.url.database)
-        os.popen2(cmd.format(**params))
+        sql = 'drop database {};'.format(engine.url.database)
+        os.popen2(cmd.format(sql=sql,
+                             port=engine.url.port,
+                             host=engine.url.host,
+                             username=engine.url.username,
+                             password=engine.url.password,
+                             ))
     elif engine.name == 'postgresql':
-        print YELLOWC + "Dropping database..." + ENDC
-
-        params['sql'] = '''SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();'''
-        cmd = "PGPASSWORD={password} psql -U {username} -h {host} {database} -c '{sql}'".format(**params)
+        print(YELLOWC + "Dropping database..." + ENDC)
+        if engine.url.password:
+            with open('.pgpass', 'w') as pgpass:
+                pgpass.write(engine.url.password)
+        cmd = "pkill -f 'postgres: postgres {}'".format(engine.url.database)
         os.popen2(cmd)
-
-        params['sql'] = 'drop database {database};'.format(**params)
-        cmd = 'PGPASSWORD={password} dropdb -h {host} -U {username} {database}'.format(**params)
+        cmd = 'dropdb -w -U {} {}'.format(engine.url.username,
+                                          engine.url.database)
         os.popen2(cmd)
 
 
 def create_db(initial=False):
-    params = _get_engine_params(engine)
     if engine.name == 'mysql':
-        print YELLOWC + "Creating database..." + ENDC
+        print(YELLOWC + "Creating database..." + ENDC)
         cmd = 'mysql -P {port} -h {host} -u {username} -p{password} -e "{sql}"'
-        sql = 'create database {database} character set utf8 collate utf8_general_ci;'.\
-            format(**params)
-        params['sql'] = sql
-        os.popen2(cmd.format(**params))
+        sql = 'create database {} character set utf8 collate utf8_general_ci;'.\
+            format(engine.url.database)
+        os.popen2(cmd.format(sql=sql,
+                             port=engine.url.port,
+                             host=engine.url.host,
+                             username=engine.url.username,
+                             password=engine.url.password,
+                             ))
     elif engine.name == 'postgresql':
-        print YELLOWC + "Creating database..." + ENDC
-        cmd = 'PGPASSWORD={password} createdb -h {host} -p {port} -U {username} -O {username} {database}'.format(**params)
+        print(YELLOWC + "Creating database..." + ENDC)
+        cmd = 'createdb -h localhost -O {} {}'.format(engine.url.username,
+                                                      engine.url.database)
         os.popen2(cmd)
     if initial:
-        time.sleep(2)
         up(0)
 
 
@@ -275,10 +272,10 @@ DELETE FROM db_version WHERE version = '{}';""".format(new))
 db_session.execute("INSERT INTO db_version (version) VALUES ('{}');")
 
 try:
-  db_session.commit()
+db_session.commit()
 except Exception:
-  db_session.rollback()
-  raise
+db_session.rollback()
+raise
 """.format(new))
         with open('migrations/down/{}.py'.format(new), 'w') as fd:
             fd.writelines("""from migrations.env import engine, db_session
@@ -290,61 +287,75 @@ except Exception:
 db_session.execute("DELETE FROM db_version WHERE version = '{}';")
 
 try:
-  db_session.commit()
+db_session.commit()
 except Exception:
-  db_session.rollback()
-  raise
+db_session.rollback()
+raise
 """.format(new))
 
-    print "Created version {}".format(new)
+    print("Created version {}".format(new))
 
 
 def schema_dump():
     dbtype = engine.name
+    params = dict(database=engine.url.database,
+                  host=engine.url.host,
+                  password=engine.url.password,
+                  port=engine.url.port,
+                  username=engine.url.username
+                  )
+
     fname = 'migrations/up/1.sql'
-    params = _get_engine_params(engine)
     if dbtype == 'mysql':
         os.popen('mysqldump -P {port} -h {host} -u {username} -p{password} {database} --no-data=true --add-drop-table=false > migrations/up/1.sql'.format(**params))
         with open(fname, 'a') as fd:
             fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
-        print "Schema saved in {}".format(fname)
+        print("Schema saved in {}".format(fname))
     elif dbtype == 'postgresql':
-        os.popen('PGPASSWORD={password} pg_dump -h {host} -U {username} -s {database} > migrations/up/1.sql'.format(**params))
+        if not params['port']:
+            params['port'] = ''
+        os.popen('pg_dump -U {username} -s {database} > migrations/up/1.sql'.format(**params))
         with open(fname, 'a') as fd:
             fd.write("\n\nINSERT INTO db_version (version) VALUES ('1');")
-        print "Schema saved in {}".format(fname)
+        print("Schema saved in {}".format(fname))
     else:
         sys.exit("Dump of {} not yet supported.".format(dbtype))
 
 
 def create_migrations_env():
     if os.path.exists('migrations'):
-        print YELLOWC + "./migrations directory already exists. Please remove to recreate." + ENDC
+        print(YELLOWC + "./migrations directory already exists. Please remove to recreate." + ENDC)
     else:
         os.mkdir('migrations')
-        print GREENC + "Created ./migrations" + ENDC
+        print(GREENC + "Created ./migrations" + ENDC)
         os.mkdir('migrations/up')
-        print GREENC + "Created ./migrations/up" + ENDC
+        print(GREENC + "Created ./migrations/up" + ENDC)
         os.mkdir('migrations/down')
-        print GREENC + "Created ./migrations/down" + ENDC
+        print(GREENC + "Created ./migrations/down" + ENDC)
         with open('migrations/migrations_env.py', 'w') as fd:
             fd.write("from database import engine, db_session")
-        print GREENC + "Created ./migrations/migrations_env.py" + ENDC
+        print(GREENC + "Created ./migrations/migrations_env.py" + ENDC)
         with open('migrations/__init__.py', 'w') as fd:
             fd.write("")
-        print GREENC + "Created ./migrations/__init__.py" + ENDC
-        print "Done!"
+        print(GREENC + "Created ./migrations/__init__.py" + ENDC)
+        print("Done!")
 
 
 def load(migration_file):
     dbtype = engine.name
-    params = _get_engine_params(engine)
-    params['fname']= migration_file
+    params = dict(database=engine.url.database,
+                  host=engine.url.host,
+                  password=engine.url.password,
+                  port=engine.url.port,
+                  username=engine.url.username,
+                  fname=migration_file
+                  )
+
     if dbtype == 'postgresql':
-        os.popen('PGPASSWORD={password} psql -U {username} -s {database} < {fname}'.format(**params))
+        os.popen('psql -U {username} -s {database} < {fname}'.format(**params))
     else:
-        print "Unsupported db type"
-    print "Loaded migration {}".format(migration_file)
+        print("Unsupported db type")
+    print("Loaded migration {}".format(migration_file))
 
 
 def main():
@@ -374,7 +385,7 @@ def main():
         else:
             migrations = _find_migrations('migrations/up').union(_find_migrations('migrations/down'))
             version = max(migrations)
-            print "No stamp version provided, stamping up to lastest version: {}".format(version)
+            print("No stamp version provided, stamping up to lastest version: {}".format(version))
         stamp(version)
     elif args['version']:
         sys.exit(str(_get_current_db_version()))
@@ -385,4 +396,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
