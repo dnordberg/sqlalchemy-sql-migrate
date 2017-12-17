@@ -88,7 +88,7 @@ def _get_current_db_version():
         return int(db_session.execute("select max(version) from db_version").scalar())
     except Exception:
         db_session.rollback()
-        print("db_version table does not exist, will apply all migrations..."))
+        print("db_version table does not exist, will apply all migrations...")
         return None
 
 
@@ -100,7 +100,7 @@ def _apply_migration(migration_dir, migration, verbose=False):
         # Need to escape schema dump properly
         sql = sql.replace("%", "%%").decode('utf-8')
         if verbose:
-            print(sql.replace('\r', '\r\n')))
+            print(sql.replace('\r', '\r\n'))
         db_session.execute(sql)
         try:
             db_session.commit()
@@ -113,9 +113,9 @@ def _apply_migration(migration_dir, migration, verbose=False):
         mod = fname.replace('/', '.').strip('.py')
         if verbose:
             mod_text = open(fname, 'r').read()
-            print(mod_text.replace('\r', '\r\n')))
+            print(mod_text.replace('\r', '\r\n'))
         __import__('{}.{}'.format(modpath, mod), {}, {})
-    print(BLUEC + "-- Applied migration " + GREENC + fname + ENDC))
+    print(BLUEC + "-- Applied migration " + GREENC + fname + ENDC)
 
 
 def _remove_stale_migrations(migrations, db_version):
