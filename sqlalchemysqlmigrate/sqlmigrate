@@ -89,7 +89,7 @@ def _get_current_db_version():
     except Exception:
         db_session.rollback()
         print("db_version table does not exist, will apply all migrations...")
-        return None
+        return 0
 
 
 def _apply_migration(migration_dir, migration, verbose=False):
